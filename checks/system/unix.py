@@ -535,7 +535,7 @@ class Memory(Check):
                 self.logger.exception('Cannot compute stats from swapinfo')
 
             return memData
-        elif sys.platform == 'sunos5':
+        elif sys.platform == 'sunos5' and platform.version().startswith('joyent'):
             try:
                 memData = {}
                 cmd = ["kstat", "-m", "memory_cap", "-c", "zone_memory_cap", "-p"]
@@ -579,6 +579,75 @@ class Memory(Check):
             except Exception:
                 self.logger.exception("Cannot compute mem stats from kstat -c zone_memory_cap")
                 return False
+        elif sys.platform == 'sunos5':
+            try:
+                # get the default pagesize on this system
+                pageData = ''
+                cmd = ["pagesize"]
+                output, _, _ = get_subprocess_output(cmd, self.logger)
+                pageData = output.splitlines()
+                if len(pageData) != 1:
+                    self.logger.warning("Output of 'pagesize' contains more than one line")
+                    raise
+                pagesize = int(pageData[0])
+
+                memData = {}
+                cmd = ["kstat", "-m", "unix", "-c", "pages", "-n", "system_pages", "-p"]
+                output, _, _ = get_subprocess_output(cmd, self.logger)
+                kmem = output.splitlines()
+
+                # unix:0:system_pages:availrmem   3292103
+                # unix:0:system_pages:class       pages
+                # unix:0:system_pages:crtime      25897478.1984412
+                # unix:0:system_pages:desfree     31806
+                # unix:0:system_pages:desscan     25
+                # unix:0:system_pages:econtig     276824064
+                # unix:0:system_pages:freemem     2120707
+                # # unix:0:system_pages:fastscan    129706
+                # unix:0:system_pages:kernelbase  16777216
+                # unix:0:system_pages:lotsfree    63612
+                # unix:0:system_pages:minfree     15903
+                # unix:0:system_pages:nalloc      40330163
+                # unix:0:system_pages:nalloc_calls        15415
+                # unix:0:system_pages:nfree       37361743
+                # unix:0:system_pages:nfree_calls 10168
+                # unix:0:system_pages:nscan       0
+                # unix:0:system_pages:pagesfree   2120707 <--
+                # unix:0:system_pages:pageslocked 711265
+                # unix:0:system_pages:pagestotal  4071197 <--
+                # unix:0:system_pages:physmem     4101957
+                # unix:0:system_pages:pp_kernel   4292549321
+                # unix:0:system_pages:slowscan    100
+                # unix:0:system_pages:snaptime    50036999.1030704
+
+                # turn unix:0:system_pages:key value into { "key": value, ...}
+                kv = [l.strip().split() for l in kmem if len(l) > 0]
+                entries = dict([(k.split(":")[-1], v) for (k, v) in kv])
+                # extract pagestotal, pagesfree, turn into MB
+                convert = lambda v: int(long(v))*pagesize/2**20
+                memData["physTotal"] = convert(entries["pagestotal"])
+                memData["physFree"] = convert(entries["pagesfree"])
+                memData["physUsed"] = memData["physTotal"] - memData["physFree"]
+
+                swapData = ''
+                cmd = ["swap", "-s"]
+                output, _, _ = get_subprocess_output(cmd, self.logger)
+                swapData = output.splitlines()
+                if len(swapData) != 1:
+                    self.logger.warning("Output of 'swap -s' contains more than one line")
+                    raise
+                swapRegex = re.compile(".*\s+(\d+)k used,\s+(\d+)k\s+available.*")
+                convert = lambda v: int(long(v))/1024
+                memData["swapUsed"] = convert(swapRegex.match(swapData[0]).group(1))
+                memData["swapFree"] = convert(swapRegex.match(swapData[0]).group(2))
+                memData["swapTotal"] = memData["swapFree"] + memData["swapUsed"]
+
+                if memData['swapTotal'] > 0:
+                    memData['swapPctFree'] = float(memData['swapFree']) / float(memData['swapTotal'])
+                return memData
+            except Exception:
+                self.logger.exception("Cannot compute mem stats from kstat -c zone_memory_cap")
+                return False
         else:
             return False
 
@@ -591,6 +660,8 @@ class Processes(Check):
             ps_arg = 'aux'
         else:
             ps_arg = 'auxww'
+        if sys.platform == 'sunos5' and not platform.version().startswith('joyent'):
+            ps_arg = '-ef'
         # Get output from ps
         try:
             output, _, _ = get_subprocess_output(['ps', ps_arg], self.logger)

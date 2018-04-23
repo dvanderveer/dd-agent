@@ -577,8 +577,25 @@ class Memory(Check):
                     memData['swapPctFree'] = float(memData['swapFree']) / float(memData['swapTotal'])
                 return memData
             except Exception:
-                self.logger.exception("Cannot compute mem stats from kstat -c zone_memory_cap")
-                return False
+                self.logger.warning("Cannot compute mem stats from kstat -c zone_memory_cap")
+                if psutil is None:
+                    self.logger.exception("Cannot fall back to psutil as it is not installed")
+                    return False
+                else:
+                    self.logger.debug("Falling back to psutil for memory stats")
+                    try:
+                        phys_memory = psutil.virtual_memory()
+                        swap = psutil.swap_memory()
+                        return {'physUsed': phys_memory.used / float(1024**2),
+                            'physFree': phys_memory.free / float(1024**2),
+                            'physUsable': phys_memory.available / float(1024**2),
+                            'physTotal': phys_memory.total / float(1024**2),
+                            'physPctUsable': (100 - phys_memory.percent) / 100.0,
+                            'swapUsed': swap.used / float(1024**2),
+                            'swapFree': swap.free / float(1024**2)}
+                    except Exception:
+                        self.logger.exception("Cannot compute mem stats with psutil")
+                        return False
         else:
             return False
 
@@ -598,8 +615,17 @@ class Processes(Check):
 
             del processLines[0]  # Removes the headers
         except Exception:
-            self.logger.exception('getProcesses')
-            return False
+            self.logger.warning('ps aux failed, falling back to ps -eo')
+            try:
+                ps_arg = '-e'
+                fmt_arg = '-o'
+                fmt_str = 'user,pid,pcpu,pmem,vsz,rss,tty,s,stime,time,comm'
+                output, _, _ = get_subprocess_output(['ps', ps_arg, fmt_arg, fmt_str], self.logger)
+                processLines = output.splitlines()
+                del processLines[0]
+            except Exception:
+                self.logger.exception('ps -eo also failed')
+                return False
 
         processes = []
 

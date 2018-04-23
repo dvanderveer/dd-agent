@@ -26,6 +26,7 @@ import socket
 import string
 import sys
 import threading
+from socket import error as socket_error, gaierror
 from time import sleep, time
 from urllib import urlencode
 import zlib
@@ -411,6 +412,18 @@ class Server(object):
 
         try:
             self.socket.bind(self.sockaddr)
+        except socket_error as e:
+            if "Errno 99" in str(e) or "Errno 126" in str(e):
+                try:
+                    log.info('unable to bind IPv6 socket, falling back to IPv4.')
+                    self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    self.sockaddr = get_socket_address(self.host, int(self.port), True)
+                    self.socket.bind(self.sockaddr)
+                except TypeError:
+                    log.error('Unable to start Dogstatsd server loop, exiting...')
+                    return
+            else:
+                raise
         except TypeError:
             log.error('Unable to start Dogstatsd server loop, exiting...')
             return

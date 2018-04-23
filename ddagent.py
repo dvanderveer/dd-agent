@@ -527,7 +527,7 @@ class Application(tornado.web.Application):
                     log.warning("localhost seems undefined in your host file, using 127.0.0.1 instead")
                     http_server.listen(self._port, address="127.0.0.1")
                 except socket_error as e:
-                    if "Errno 99" in str(e):
+                    if "Errno 99" in str(e) or "Errno 126" in str(e):
                         log.warning("IPv6 doesn't seem to be fully supported. Falling back to IPv4")
                         http_server.listen(self._port, address="127.0.0.1")
                     else:

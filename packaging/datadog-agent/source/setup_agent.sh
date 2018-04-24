@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Datadog Agent installation from source script (should support most Unix OSes):
 # download the source of the Agent, install its dependencies and set it up.
 

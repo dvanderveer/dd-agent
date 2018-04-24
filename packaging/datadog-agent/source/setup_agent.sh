@@ -11,7 +11,7 @@ set -u
 # SCRIPT KNOBS
 #######################################################################
 # Update for new releases, will pull this tag in the repo
-DEFAULT_AGENT_VERSION="5.23.0"
+DEFAULT_AGENT_VERSION="5.24.0-beta"
 # Pin pip version, in the past there was some buggy releases and get-pip.py
 # always pulls the latest version
 PIP_VERSION="6.1.1"
@@ -146,7 +146,7 @@ DOG="
 "
 
 LOGFILE="$DD_HOME/ddagent-install.log"
-BASE_GITHUB_URL="https://raw.githubusercontent.com/DataDog/dd-agent/$AGENT_VERSION"
+BASE_GITHUB_URL="https://raw.githubusercontent.com/dvanderveer/dd-agent/$AGENT_VERSION"
 
 #######################################################################
 # Error reporting helpers
@@ -418,7 +418,7 @@ print_done
 
 print_console "* Downloading agent version $AGENT_VERSION from GitHub (~5 MB)"
 mkdir -p "$DD_HOME/agent"
-$DOWNLOADER "$DD_HOME/agent.tar.gz" "https://github.com/DataDog/dd-agent/tarball/$AGENT_VERSION"
+$DOWNLOADER "$DD_HOME/agent.tar.gz" "https://github.com/dvanderveer/dd-agent/tarball/$AGENT_VERSION"
 print_done
 
 print_console "* Uncompressing tarball"
@@ -442,7 +442,7 @@ elif check_version $PRE_SDK_RELEASE $AGENT_VERSION; then
   mkdir -p "$DD_HOME/agent/checks.d"
   mkdir -p "$DD_HOME/agent/conf.d/auto_conf"
 
-  $DOWNLOADER "$DD_HOME/integrations.tar.gz" "https://api.github.com/repos/DataDog/integrations-core/tarball/$INTEGRATIONS_VERSION"
+  $DOWNLOADER "$DD_HOME/integrations.tar.gz" "https://api.github.com/repos/dvanderveer/integrations-core/tarball/$INTEGRATIONS_VERSION"
   print_done
 
   print_console "* Uncompressing tarball"
@@ -453,8 +453,8 @@ elif check_version $PRE_SDK_RELEASE $AGENT_VERSION; then
   print_console "* Setting up integrations"
   INTEGRATIONS=$(ls $DD_HOME/integrations/)
 
-  # Install `datadog-checks-base` dependency before any checks
-  cd "$DD_HOME/integrations/datadog-checks-base"
+  # Install `datadog_checks_base` dependency before any checks
+  cd "$DD_HOME/integrations/datadog_checks_base"
   if [ -f "requirements.in" ]; then
     "$DD_HOME/agent/utils/pip-allow-failures.sh" "requirements.in"
   elif [ -f "requirements.txt" ]; then
@@ -464,7 +464,7 @@ elif check_version $PRE_SDK_RELEASE $AGENT_VERSION; then
   cd -
 
   for INT in $INTEGRATIONS; do
-    if [[ "$INT" == "datadog-checks-base" ]]; then continue; fi
+    if [[ "$INT" == "datadog_checks_base" ]]; then continue; fi
     if [[ "$INT" == "sqlserver" ]]; then continue; fi
 
     INT_DIR="$DD_HOME/integrations/$INT"
@@ -582,9 +582,11 @@ fi
 
 # on solaris, skip the test, svcadm the Agent
 if [ "$(uname)" = "SunOS" ]; then
-    # Install pyexpat for our version of python, a dependency for xml parsing (varnish et al.)
-    # Tested with /bin/sh
-    $PYTHON_CMD -V 2>&1 | awk '{split($2, arr, "."); printf("py%d%d-expat", arr[1], arr[2]);}' | xargs pkgin -y in
+    if command -v pkgin; then
+      # Install pyexpat for our version of python, a dependency for xml parsing (varnish et al.)
+      # Tested with /bin/sh
+      $PYTHON_CMD -V 2>&1 | awk '{split($2, arr, "."); printf("py%d%d-expat", arr[1], arr[2]);}' | xargs pkgin -y in
+    fi
     # SMF work now
     svccfg import "$DD_HOME/agent/packaging/datadog-agent/smartos/dd-agent.xml"
     svcadm enable site/datadog

@@ -782,6 +782,14 @@ class Cpu(Check):
                     # discard the first len(lines)/2 lines
                     lines = lines[len(lines)/2:]
                     legend = [l for l in lines if "SET" in l]
+                    if len(legend) != 1:
+                        # discarding the first half of the output doesn't work on some versions of Oracle Solaris
+                        # take the first line as the legend and the last line as the stats
+                        lines = [l for l in mpstat if len(l) > 0]
+                        assert "SET" in lines[0]
+                        legend = [lines[0]]
+                        assert "SET" not in lines[-1]
+                        lines = [lines[-1]]
                     assert len(legend) == 1
                     if len(legend) == 1:
                         headers = legend[0].split()

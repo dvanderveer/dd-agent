@@ -268,7 +268,11 @@ class Load(Check):
                 self.logger.exception('Cannot extract load')
                 return False
 
-        elif sys.platform in ('darwin', 'sunos5') or sys.platform.startswith("freebsd"):
+        elif (
+                sys.platform in ('darwin', 'sunos5')
+                or sys.platform.startswith("freebsd")
+                or sys.platform.startswith("aix")
+             ):
             # Get output from uptime
             try:
                 uptime, _, _ = get_subprocess_output(['uptime'], self.logger)
@@ -809,6 +813,45 @@ class Cpu(Check):
                                               dot(wait, rel_size),
                                               dot(idle, rel_size),
                                               0.0)
+
+            elif sys.platform.startswith("aix"):
+                # > mpstat -w 1 2
+                #
+                # System configuration: lcpu=16 mode=Capped
+                #
+                # cpu    min    maj    mpc    int     cs    ics     rq    mig   lpa   sysc    us    sy    wa    id    pc
+                #   0   2862      0      0    414    323     78      3      2 100.0   2524  58.8   2.8   0.0  38.3  0.40
+                #   1      0      0      0     12      0      0      0      0     -      0   0.0   0.0   0.0 100.0  0.20
+                # ...
+                #  14      0      0      0     12      0      0      0      0     -      0   0.0   0.0   0.0 100.0  0.19
+                #  15      0      0      0     12      0      0      0      0     -      0   0.0   0.0   0.0 100.0  0.19
+                # ALL   8005      0      0   1314    922     94      3     13   0.0   5388  12.7   0.7   0.5  86.1  3.97
+                # ------------------------------------------------------------------------------------------------------------------------------------
+                #   0   1779      0      0    424    302      0      1      3 100.0   3601   5.4   3.3   0.0  91.3  0.26
+                #   1      0      0      0     18      0      0      0      0     -      0   0.0   0.0   0.0 100.0  0.24
+                # ...
+                #  14      0      0      0     17      0      0      0      0     -      0   0.0   0.0   0.0 100.0  0.24
+                #  15      0      0      0     17      0      0      0      0     -      0   0.0   0.0   0.0 100.0  0.24
+                # ALL  10281      0      0   1447   1019     25      1      7   0.0  17410   2.6   1.4   0.3  95.6  4.00
+                output, _, _ = get_subprocess_output(['mpstat', '-w', '1', '2'], self.logger)
+                mpstat = output.splitlines()
+                legend  = [l for l in mpstat if l.startswith("cpu")]
+                cpu_lines = [l for l in mpstat if l.startswith("ALL")]
+                if len(legend) == 1 and len(cpu_lines) == 2:
+                    # second "ALL" line has current CPU stats
+                    cpu_data = [cpu_lines[1]]
+                    headers = legend[0].split()
+                    cpu_user = [get_value(headers, l.split(), "us") for l in cpu_data]
+                    cpu_sys = [get_value(headers, l.split(), "sy") for l in cpu_data]
+                    cpu_wait = [get_value(headers, l.split(), "wt") for l in cpu_data]
+                    cpu_idle = [get_value(headers, l.split(), "id") for l in cpu_data]
+                    return format_results(cpu_user, cpu_sys, cpu_wait, cpu_idle, 0.0)
+                else:
+                    self.logger.warn("Unexpected output from 'mpstat -w 1 2'")
+                    self.logger.warn("Expected 1 header line, received " + str(len(legend)))
+                    self.logger.warn("Expected 2 lines of ALL cpu stats, received " + str(len(cpu_lines)))
+                    return False
+
             else:
                 self.logger.warn("CPUStats: unsupported platform")
                 return False
